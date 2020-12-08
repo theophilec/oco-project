@@ -1,7 +1,7 @@
 # Large data files
-data/processed/
+data/processed/*
 !data/processed/.gitkeep
-data/raw/
+data/raw/*
 !data/raw/.gitkeep
 
 # IDE config
