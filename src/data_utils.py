@@ -6,6 +6,7 @@ import pandas as pd
 
 def load_raw_data(dir_data: Path, print_descriptive_stats: bool):
     """
+    Load MNIST dataset from CSV and return as np.array.
 
     Args:
         dir_data:

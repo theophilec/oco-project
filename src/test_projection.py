@@ -67,6 +67,7 @@ def test_simplex_inside():
     # assert inside simplex identical
     for i in range(100):
         x = np.random.rand(100)
+        x = x / np.sum(x)
         x_proj, d_0, theta = simplex_proj(x)
         assert_almost_equal(x, x_proj, decimal=8)
         assert d_0 == l0_norm(x_proj)
@@ -76,7 +77,8 @@ def test_ball_inside():
     # assert inside B(z) identical
     for i in range(100):
         radius = 10
-        x = np.random.rand(100) * radius
+        x = np.random.rand(100)
+        x = x / np.sum(np.abs(x)) * radius
         x_proj, d_0, theta = l1_ball_proj(x, radius)
         assert_almost_equal(x, x_proj, decimal=8)
         assert 100 == l0_norm(x_proj)

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib import ticker
 
 from data_utils import load_processed_data
-
+from projection import l1_ball_proj
 
 class Logger:
     def __init__(self, algo_tag: str):
@@ -130,16 +130,55 @@ def train_gradient_descent(a: np.array, b: np.array, a_test: np.array, b_test: n
 
     return x, logger
 
+def train_proj_gradient_descent(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float, radius: float):
+    # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
+    a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
+    a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
+    n, d = a.shape
+
+    # the weights of our SVM classifier
+    x = np.zeros(d)
+
+    logger = Logger(algo_tag=rf'$PGD - \alpha={alpha} - z={radius}$')
+    for t in range(1, T + 1):
+        # log our results (before training, to match plots from the class)
+        logger.log(loss=hinge_loss(a, b, x, alpha),
+                   train_err=error(a, b, x),
+                   test_err=error(a_test, b_test, x))
+
+        if alpha == 0:
+            # our problem is simply convex (as the hinge loss is a convex function)
+            eta_t = 1 / np.sqrt(t)
+        else:
+            # thanks to the regularization, our problem is alpha strongly convex
+            # eta_t = 2 / (alpha * (t + 1))
+            eta_t = 1 / t
+
+        grad = hinge_loss_grad(a, b, x, alpha)
+
+
+        x, d_0, theta = l1_ball_proj(x - eta_t * grad, radius)
+        # TODO: we could log d_0 as well?
+
+
+    return x, logger
+
 
 def main():
     dir_data = Path(__file__).resolve().parents[1].joinpath('data/')
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
+    # projected gradient descent
+    x, logger_p_gd = train_proj_gradient_descent(
+        a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=100, alpha=0.33, radius=10
+    )
     # gradient descent
-    x, logger_gd = train_gradient_descent(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=100, alpha=0.33)
+    x, logger_gd = train_gradient_descent(
+        a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=100, alpha=0.33
+    )
 
     # plot results
-    plot_results([logger_gd])
+    plot_results([logger_gd, logger_p_gd])
 
 
 if __name__ == '__main__':

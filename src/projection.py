@@ -12,7 +12,7 @@ def simplex_proj(a: np.array):
 
     d = len(a)
 
-    if (a <= 1).all():
+    if np.sum(a) <= 1 + 1e-6:
         return a, d, 0.0
 
     # sort largest to smallest
@@ -33,12 +33,14 @@ def l1_ball_proj(a: np.array, radius: float):
     d = len(a)
 
     abs_a = np.abs(a)
-    if np.sum(abs_a) <= radius:
+    if np.sum(abs_a) <= radius + 1e-6:
         return a, d, 0.0
     else:
         sign = np.sign(a)
         simplex_x, d_0, theta = simplex_proj(abs_a / radius)
-        return radius * sign * simplex_x, d_0, theta
+        proj = radius * sign * simplex_x
+        assert (np.sum(np.abs(proj)) - radius) < 1e-5
+        return proj, d_0, theta
 
 
 if __name__ == "__main__":
@@ -87,6 +89,7 @@ if __name__ == "__main__":
     # assert inside simplex identical
     for i in range(100):
         x = np.random.rand(100)
+        x = x / np.sum(x)
         x_proj, d_0, theta = simplex_proj(x)
         assert_almost_equal(x, x_proj, decimal=8)
         assert d_0 == l0_norm(x_proj)
@@ -94,7 +97,8 @@ if __name__ == "__main__":
     # assert inside B(z) identical
     for i in range(100):
         radius = 10
-        x = np.random.rand(100) * radius
+        x = np.random.rand(100)
+        x = x / np.sum(x) * radius
         x_proj, d_0, theta = l1_ball_proj(x, radius)
         assert_almost_equal(x, x_proj, decimal=8)
         assert 100 == l0_norm(x_proj)
@@ -114,3 +118,12 @@ if __name__ == "__main__":
     x_proj, d_0, theta = l1_ball_proj(x, 1)
     assert_almost_equal(np.array([1.0, 0.0]), x_proj, decimal=8)
     assert d_0 == l0_norm(x_proj)
+
+    x = np.array([10.10, 0.0])
+    x_proj, d_0, theta = l1_ball_proj(x, 10)
+    assert_almost_equal(np.array([10.0, 0.0]), x_proj, decimal=8)
+    assert d_0 == l0_norm(x_proj)
+
+    x = np.array([10.10, 1.0, 45.0])
+    x_proj, d_0, theta = l1_ball_proj(x, 10)
+    assert (np.sum(np.abs(x_proj)) - radius) < 1e-5
