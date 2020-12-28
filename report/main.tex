@@ -1,0 +1,209 @@
+\documentclass[twoside,11pt]{article}
+
+% \usepackage[preprint, abbrvbib]{jmlr2e}
+\usepackage[preprint,abbrvbib]{jmlr2e}
+\usepackage[utf8]{inputenc}
+\usepackage{tikz-cd}
+\jmlrheading{1}{2020}{1-38}{4/00}{10/00}{cantelobre21}{Théophile Cantelobre, Benjamin Guedj, María Pérez-Ortiz, John Shawe-Taylor}
+\ShortHeadings{PAC-Bayesian Structured Prediction with ILE}{Cantelobre, Guedj, Pérez-Ortiz, Shawe-Taylor}
+\firstpageno{1}
+\usepackage{color}
+\usepackage{diagbox}
+% MATH SYMBOLS AND ENVIRONMENTS
+\usepackage{latexsym}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage[mathcal]{eucal}
+\usepackage{multirow}
+\usepackage{xspace}
+% ALGORITHMS ENVIRONMENT
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\usepackage{adjustbox}
+% USEFUL COMMANDS
+\newcommand{\paren}[1]{\left( #1 \right)}
+\newcommand{\croch}[1]{\left[\, #1 \,\right]}
+\newcommand{\acc}[1]{\left\{ #1 \right\}}
+\newcommand{\abs}[1]{\left| #1 \right|}
+\newcommand{\norm}[1]{\left\Vert #1 \right\Vert}
+\newcommand{\todo}[1]{\textbf{\color{red}{[TODO: #1]}}}
+\newcommand{\ok}{\textbf{\color{red}{[OK]}}}
+\newcommand{\expect}[1]{\mathop{\mathbb{E}}_{#1}}
+\newcommand{\var}[1]{\mathop{\mathbb{V}}_{#1}}
+\newcommand{\note}[1]{{\textbf{\color{red}#1}}}
+
+\newcommand{\ind}{\perp\!\!\!\!\perp}
+\newcommand{\grad}{\nabla}
+\DeclareMathOperator{\Tr}{Tr}
+\DeclareMathOperator{\Cov}{Cov}
+
+\makeatother
+
+% THEOREM STYLES
+\usepackage{amsthm}
+\usepackage{cleveref}
+\newcommand{\BlackBox}{\rule{1.5ex}{1.5ex}}  % end of proof
+\renewenvironment{proof}{\par\noindent{\bf Proof\ }}{\hfill\BlackBox\\[2mm]}
+\newtheorem{example}{Example} 
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma} 
+\newtheorem{proposition}[theorem]{Proposition} 
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\newtheorem{axiom}[theorem]{Axiom}
+
+\newtheorem{lemme}{Lemma}
+\newtheorem{prop}[theorem]{Proposition}
+\newtheorem{examples}{Examples}
+\newtheorem{problem}{Problem}
+\newtheorem{warning}{\textcolor{red}{Warning}}[theorem]
+
+% CLEAN REFERENCE HANDLING
+\crefname{problem}{Problem}{Problems}
+\crefname{theorem}{Theorem}{Theorems}
+\crefname{prop}{Proposition}{Propositions}
+\crefname{equation}{Eq.}{Eqs.}
+\crefname{figure}{Figure}{Figures}
+\crefname{section}{Section}{Sections}
+\crefname{table}{Table}{Tables}
+\crefname{lemme}{Lemma}{Lemmas}
+\crefname{corollary}{Corollary}{Corollaries}
+\crefname{example}{Example}{Examples}
+\crefname{appendix}{Appendix}{Appendixes}
+\crefname{remark}{Remark}{Remark}
+%\crefname{alg}{Algorithm}{Algorithm}
+
+
+
+\begin{document}
+
+\title{Hogwild} 
+\author{%
+\name Alexandre Thomas \\
+\addr Mines ParisTech -- PSL, Sorbonne Université
+\AND
+\name Théophile Cantelobre\\
+\addr Mines ParisTech -- PSL, Sorbonne Université
+}
+
+\maketitle
+
+
+\todo{Convert to OCO course notation?}
+
+\section{Formalism}
+\subsection{Goal} The goal of Hogwild is to minimize a function $f: \mathbb R^n \rightarrow \mathbb R$ which decomposes as:
+\begin{equation*}
+    f(x) = \sum_{e\in E}f_e(x_e)
+\end{equation*}
+
+where:
+\begin{itemize}
+    \item $e\subset [n]$ a small subset of $[n]$,
+    \item $x_e\in\mathbb R^{\vert e \vert}$, the values of the vector $x$ on its coordinates indexed by $e$.
+\end{itemize}
+
+\subsection{Sparse SVM problem formulation}
+\paragraph{Dataset}
+Given $m = \vert E \vert$ pairs of data points  $E = \lbrace (z_1, y_1), \ldots, (z_m, y_m)\rbrace\in \left(\mathbb R^n \times \lbrace 0, 1\rbrace\right)^m$.
+
+\paragraph{SVM loss} Given $\lambda > 0$, learning an SVM is equivalent to the following optimization problem:
+\begin{problem}[SVM]\label{prob:svm}
+    \begin{equation*}
+        \min_{x\in\mathbb R^n}\sum_{\alpha \in E}\max(1- y_\alpha x^Tz_\alpha, 0) + \lambda\norm{x}_2^2
+    \end{equation*}
+\end{problem}
+
+\paragraph{SVM to Sparse-SVM}
+
+Hypothesis: $z_\alpha$ are very sparse.
+
+Given $\alpha \in [\vert E \vert]$, let $e_\alpha$ denote the non-zero components of $z_\alpha$. Conversely, given $u\in[n]$, let $d_u$ denote the number of training examples $z$ for which $z^u$ is non-zero.
+
+Given $\alpha \in [\vert E\vert]$, then 
+
+\begin{equation}
+    \max(1- y_\alpha x^Tz_\alpha, 0) = \max(1- y_\alpha x_\alpha^Tz_\alpha, 0)
+\end{equation}
+
+and
+
+\begin{proposition}
+    Assume $\forall u \in[n], d_u > 0$. Then,
+    \begin{equation}
+        \norm{x}^2 = \sum_{\alpha \in E}\sum_{u\in e_\alpha}\frac{x_u^2}{d_u}
+    \end{equation}
+\end{proposition}
+
+\begin{proof}
+    Notice that
+    \begin{equation*}
+        \sum_{\alpha \in E} \norm{x_{e_\alpha}}^2 = \sum_{u=1}^n x_u^2d_u.
+    \end{equation*}
+\end{proof}
+So, we can rewrite \cref{prob:svm} as a \emph{sparse SVM} problem as in \cref{prob:sparse-svm}:
+\begin{problem}[Sparse SVM]\label{prob:sparse-svm}
+    \begin{equation*}
+        \min_{x\in\mathbb R^n}\sum_{\alpha \in E}\underbrace{\max(1- y_\alpha x_\alpha^Tz_\alpha, 0) + \lambda\sum_{u\in e_\alpha}\frac{x_u^2}{d_u}}_\text{$f_\alpha(x_\alpha)$}
+    \end{equation*}
+\end{problem}
+
+\subsection{Quantifying sparsity on MNIST}
+\todo{Define $\Omega$, $\Delta$ and $\rho$.}
+
+\section{\texttt{Hogwild !} algorithm}
+\subsection{Computation model}
+Shared memory model with $p$ processors. More precisely:
+\begin{itemize}
+    \item $x$ can be read by any processor.
+    \item The component-wise addition operator is atomic. In other words, a single component of $x$ can be modified by adding a scalar without locking.
+\end{itemize}
+
+\subsection{Algorithm description}
+Taking a lock-free approach, each processor, randomly samples $e$ from $E$ uniformly at random (the uniform distribution over $E$ is denoted $\mathcal E$). It then reads $\hat x_e \leftarrow x_e$ from the shared buffer. The gradient of $f_e$ is computed using $\hat x_e$, denoted $G_e(\hat x_e)$. Finally, the gradient update step is carried out component by component using atomic addition of $\gamma \delta_v^TG_e(\hat x_e)$ for every $v \in e$. Here, $\delta_v$ is the one-hot encoding of $v$ over
+$\lbrace{1, \ldots, n\rbrace}$. A \texttt{Hogwild!} step for an individual processor is given in \Cref{alg:hogwild-step}.
+
+
+\begin{algorithm}[ht]
+\SetAlgoLined
+\SetKwInOut{Input}{Input}
+\SetKwInOut{Parameter}{Parameters}
+%\Input{Initial posterior mean $W_0$.}
+\Parameter{Step-size $\gamma$.}
+Sample $e\sim\mathcal E$ uniformly over $E$.\\
+Read buffer $\hat x_e \leftarrow x_e$.\\
+Compute $G_e(\hat x_e)$.\\
+\For{$v\in e$}{
+    Atomic addition $x_v \leftarrow x_v - \gamma b_v^TG_e(\hat x_e)$ (in buffer).\\
+}
+\caption{\texttt{Hogwild!} step for an individual processor.}
+\label{alg:hogwild-step}
+\end{algorithm}
+
+\subsection{Convergence analysis}
+\todo{}
+
+\subsection{Runtime analysis}
+\todo{}
+
+\section{Implementation}
+We implemented \texttt{Hogwild!} in \texttt{Python} relying on the \texttt{multiprocessing} library to handle the parallel programming aspects of the algorithm. Note that the experiments in the paper are based on a \texttt{C} implementation which was not released. 
+
+In this section, we explain the architecture of the code at a high-level. Although we include code snippets here, our source code is available at: \todo{github address}. Our code is architectured to interface with the code for the other algorithms presented in this report\footnote{See, for example, \href{https://github.com/srome/sklearn-hogwild}{this Github repository} for a \texttt{scikit-learn}-oriented implementation.}.
+
+
+
+\section{Experimental results}
+
+\newpage
+Remove this later: \cite{ciliberto_general_2020}
+% \acks{Acknowledgments go here.}
+
+% \appendix
+
+\vskip 0.2in
+\newpage
+\bibliography{biblio}
+
+\end{document}
