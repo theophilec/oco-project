@@ -4,8 +4,8 @@
 \usepackage[preprint,abbrvbib]{jmlr2e}
 \usepackage[utf8]{inputenc}
 \usepackage{tikz-cd}
-\jmlrheading{1}{2020}{1-38}{4/00}{10/00}{cantelobre21}{Théophile Cantelobre, Benjamin Guedj, María Pérez-Ortiz, John Shawe-Taylor}
-\ShortHeadings{PAC-Bayesian Structured Prediction with ILE}{Cantelobre, Guedj, Pérez-Ortiz, Shawe-Taylor}
+\jmlrheading{1}{2020}{1-38}{4/00}{10/00}{cantelobre21}{Alexandre Thomas, Théophile Cantelobre}
+\ShortHeadings{PAC-Bayesian Structured Prediction with ILE}{Thomas Cantelobre}
 \firstpageno{1}
 \usepackage{color}
 \usepackage{diagbox}
@@ -106,25 +106,25 @@ where:
 
 \subsection{Sparse SVM problem formulation}
 \paragraph{Dataset}
-Given $m = \vert E \vert$ pairs of data points  $E = \lbrace (z_1, y_1), \ldots, (z_m, y_m)\rbrace\in \left(\mathbb R^n \times \lbrace 0, 1\rbrace\right)^m$.
+Given $m = \vert E \vert$ pairs of data points  $E = \lbrace (a_1, b_1), \ldots, (a_m, b_m)\rbrace\in \left(\mathbb R^n \times \lbrace 0, 1\rbrace\right)^m$.
 
 \paragraph{SVM loss} Given $\lambda > 0$, learning an SVM is equivalent to the following optimization problem:
 \begin{problem}[SVM]\label{prob:svm}
     \begin{equation*}
-        \min_{x\in\mathbb R^n}\sum_{\alpha \in E}\max(1- y_\alpha x^Tz_\alpha, 0) + \lambda\norm{x}_2^2
+        \min_{x\in\mathbb R^n}\sum_{\alpha \in E}\max(1- y_\alpha x^Ta_\alpha, 0) + \lambda\norm{x}_2^2
     \end{equation*}
 \end{problem}
 
 \paragraph{SVM to Sparse-SVM}
 
-Hypothesis: $z_\alpha$ are very sparse.
+Hypothesis: $a_\alpha$ are very sparse.
 
-Given $\alpha \in [\vert E \vert]$, let $e_\alpha$ denote the non-zero components of $z_\alpha$. Conversely, given $u\in[n]$, let $d_u$ denote the number of training examples $z$ for which $z^u$ is non-zero.
+Given $\alpha \in [\vert E \vert]$, let $e_\alpha$ denote the non-zero components of $a_\alpha$. Conversely, given $u\in[n]$, let $d_u$ denote the number of training examples $a$ for which $a_u$ is non-zero.
 
 Given $\alpha \in [\vert E\vert]$, then 
 
 \begin{equation}
-    \max(1- y_\alpha x^Tz_\alpha, 0) = \max(1- y_\alpha x_\alpha^Tz_\alpha, 0)
+    \max(1- b_\alpha x^Ta_\alpha, 0) = \max(1- b_\alpha x_\alpha^Ta_\alpha, 0)
 \end{equation}
 
 and
@@ -145,7 +145,7 @@ and
 So, we can rewrite \cref{prob:svm} as a \emph{sparse SVM} problem as in \cref{prob:sparse-svm}:
 \begin{problem}[Sparse SVM]\label{prob:sparse-svm}
     \begin{equation*}
-        \min_{x\in\mathbb R^n}\sum_{\alpha \in E}\underbrace{\max(1- y_\alpha x_\alpha^Tz_\alpha, 0) + \lambda\sum_{u\in e_\alpha}\frac{x_u^2}{d_u}}_\text{$f_\alpha(x_\alpha)$}
+        \min_{x\in\mathbb R^n}\sum_{\alpha \in E}\underbrace{\max(1- b_\alpha x_\alpha^Ta_\alpha, 0) + \lambda\sum_{u\in e_\alpha}\frac{x_u^2}{d_u}}_\text{$f_\alpha(x_\alpha)$}
     \end{equation*}
 \end{problem}
 
@@ -175,7 +175,7 @@ Sample $e\sim\mathcal E$ uniformly over $E$.\\
 Read buffer $\hat x_e \leftarrow x_e$.\\
 Compute $G_e(\hat x_e)$.\\
 \For{$v\in e$}{
-    Atomic addition $x_v \leftarrow x_v - \gamma b_v^TG_e(\hat x_e)$ (in buffer).\\
+    Atomic addition $x_v \leftarrow x_v - \gamma \delta_v^TG_e(\hat x_e)$ (in buffer).\\
 }
 \caption{\texttt{Hogwild!} step for an individual processor.}
 \label{alg:hogwild-step}
