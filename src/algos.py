@@ -7,9 +7,10 @@ from matplotlib import ticker
 
 from data_utils import load_processed_data
 from projection import l1_ball_proj
-
+from utils import softmax
 
 np.random.seed(0)
+
 
 class Logger:
     def __init__(self, algo_tag: str):
@@ -27,13 +28,13 @@ class Logger:
 def plot_results(loggers: List[Logger]):
     # Create plots and set axes
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(6, 12))
-    ax1.set_title('test error')
-    ax2.set_title('train error')
-    ax3.set_title('training loss')
+    ax1.set_title("test error")
+    ax2.set_title("train error")
+    ax3.set_title("training loss")
     for ax in [ax1, ax2]:
         # log scale for error plots
-        ax.set_xscale('log')
-        ax.set_yscale('log')
+        ax.set_xscale("log")
+        ax.set_yscale("log")
         ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
         ax.yaxis.set_major_formatter(ticker.ScalarFormatter())
 
@@ -100,11 +101,13 @@ def hinge_loss_grad(a: np.array, b: np.array, x: np.array, alpha: float):
     mask = b * a.dot(x) < 1  # (n,)
     # sum of the hinge loss gradients of given samples: grad_l_i = (b_i * x.dot(a_i) < 1) * b_i * a_i
     sum_grad_l_i = (mask * b).dot(a)  # (d,)
-    grad = - (1 / n) * sum_grad_l_i + alpha * x  # (d,)
+    grad = -(1 / n) * sum_grad_l_i + alpha * x  # (d,)
     return grad
 
 
-def train_gradient_descent(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float):
+def train_gradient_descent(
+    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float
+):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
@@ -113,12 +116,14 @@ def train_gradient_descent(a: np.array, b: np.array, a_test: np.array, b_test: n
     # the weights of our SVM classifier
     x = np.zeros(d)
 
-    logger = Logger(algo_tag=rf'$GD - \alpha={alpha}$')
+    logger = Logger(algo_tag=rf"$GD - \alpha={alpha}$")
     for t in range(1, T + 1):
         # log our results (before training, to match plots from the class)
-        logger.log(loss=hinge_loss(a, b, x, alpha),
-                   train_err=error(a, b, x),
-                   test_err=error(a_test, b_test, x))
+        logger.log(
+            loss=hinge_loss(a, b, x, alpha),
+            train_err=error(a, b, x),
+            test_err=error(a_test, b_test, x),
+        )
 
         if alpha == 0:
             # our problem is simply convex (as the hinge loss is a convex function)
@@ -133,7 +138,16 @@ def train_gradient_descent(a: np.array, b: np.array, a_test: np.array, b_test: n
 
     return x, logger
 
-def train_proj_gradient_descent(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float, radius: float):
+
+def train_proj_gradient_descent(
+    a: np.array,
+    b: np.array,
+    a_test: np.array,
+    b_test: np.array,
+    T: int,
+    alpha: float,
+    radius: float,
+):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
@@ -142,12 +156,14 @@ def train_proj_gradient_descent(a: np.array, b: np.array, a_test: np.array, b_te
     # the weights of our SVM classifier
     x = np.zeros(d)
 
-    logger = Logger(algo_tag=rf'$PGD - \alpha={alpha} - z={radius}$')
+    logger = Logger(algo_tag=rf"$PGD - \alpha={alpha} - z={radius}$")
     for t in range(1, T + 1):
         # log our results (before training, to match plots from the class)
-        logger.log(loss=hinge_loss(a, b, x, alpha),
-                   train_err=error(a, b, x),
-                   test_err=error(a_test, b_test, x))
+        logger.log(
+            loss=hinge_loss(a, b, x, alpha),
+            train_err=error(a, b, x),
+            test_err=error(a_test, b_test, x),
+        )
 
         if alpha == 0:
             # our problem is simply convex (as the hinge loss is a convex function)
@@ -159,15 +175,68 @@ def train_proj_gradient_descent(a: np.array, b: np.array, a_test: np.array, b_te
 
         grad = hinge_loss_grad(a, b, x, alpha)
 
-
         x, d_0, theta = l1_ball_proj(x - eta_t * grad, radius)
         # TODO: we could log d_0 as well?
-
 
     return x, logger
 
 
-def train_proj_online_gradient_descent(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float, radius: float):
+def train_sgd_proj(
+    a: np.array,
+    b: np.array,
+    a_test: np.array,
+    b_test: np.array,
+    T: int,
+    alpha: float,
+    radius: float,
+):
+    # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
+    a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
+    a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
+    n, d = a.shape
+
+    # the weights of our SVM classifier
+    # x_avg is the averaged weights (online to batch conversion)
+    x_avg = np.zeros(d)
+    # x is weight (online version)
+    x = np.zeros(d)
+
+    logger = Logger(algo_tag=rf"P-OGD - $\alpha={alpha} - z={radius}$")
+    for t in tqdm(range(1, T + 1)):
+        # pick random sample
+        i = np.random.randint(n)
+        a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
+
+        # log our results (before training, to match plots from the class)
+        logger.log(
+            loss=hinge_loss(a, b, x_avg, alpha),
+            train_err=error(a, b, x_avg),
+            test_err=error(a_test, b_test, x_avg),
+        )
+
+        if alpha == 0:
+            # our problem is convex (as the hinge loss is a convex function)
+            eta_t = 1 / np.sqrt(t)
+        else:
+            # thanks to the regularization, our problem is alpha strongly convex
+            # eta_t = 2 / (alpha * t)
+            eta_t = 1 / (alpha * t)
+
+        grad = hinge_loss_grad(a_, b_, x, alpha)
+
+        x = x - eta_t * grad
+        x, d_0, theta = l1_ball_proj(x, radius)
+        # TODO: we could log d_0 as well?
+
+        # averaging
+        x_avg = (x_avg * (t - 1) + x) / t
+
+    return x_avg, logger
+
+
+def train_smd(
+    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
+):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
@@ -175,62 +244,147 @@ def train_proj_online_gradient_descent(a: np.array, b: np.array, a_test: np.arra
 
     # the weights of our SVM classifier
     # x is the averaged weights (online to batch conversion)
+    x_avg = np.zeros(d)
     x = np.zeros(d)
     # y is weight (online version)
     y = np.zeros(d)
 
-    logger = Logger(algo_tag=rf'P-OGD - $\alpha={alpha} - z={radius}$')
+    logger = Logger(algo_tag=rf"P-SMD - $z={radius}$")
     for t in tqdm(range(1, T + 1)):
         # pick random sample
         i = np.random.randint(n)
         a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
 
         # log our results (before training, to match plots from the class)
-        logger.log(loss=hinge_loss(a, b, x, alpha),
-                   train_err=error(a, b, x),
-                   test_err=error(a_test, b_test, x))
+        logger.log(
+            loss=hinge_loss(a, b, x_avg, 0),
+            train_err=error(a, b, x_avg),
+            test_err=error(a_test, b_test, x_avg),
+        )
 
-        if alpha == 0:
-            # our problem is simply convex (as the hinge loss is a convex function)
-            eta_t = 1 / np.sqrt(t)
-        else:
-            # thanks to the regularization, our problem is alpha strongly convex
-            # eta_t = 2 / (alpha * t)
-            eta_t = 1 / t
+        eta_t = 1 / np.sqrt(t)
 
-        grad = hinge_loss_grad(a_, b_, y, alpha)
+        grad = hinge_loss_grad(a_, b_, x, 0)
 
         y = y - eta_t * grad
-        y, d_0, theta = l1_ball_proj(y, radius)
-        # TODO: we could log d_0 as well?
+        x, d_0, theta = l1_ball_proj(y, radius)
 
         # averaging
-        x = (x * (t - 1) + y) / t
-
+        x_avg = (x_avg * (t - 1) + x) / t
 
     return x, logger
 
 
+def train_seg_pm(
+    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
+):
+    # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
+    a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
+    a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
+    n, d = a.shape
+
+    # the weights of our SVM classifier
+    # x is the averaged weights (online to batch conversion)
+    x_avg = np.zeros(d)
+    x = np.zeros(d)
+    theta = np.zeros(2 * d)
+    w = np.zeros(2 * d)
+
+    logger = Logger(algo_tag=rf"P-Seg-pm - $z={radius}$")
+    for t in tqdm(range(1, T + 1)):
+        # pick random sample
+        i = np.random.randint(n)
+        a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
+
+        # log our results (before training, to match plots from the class)
+        logger.log(
+            loss=hinge_loss(a, b, x_avg, 0),
+            train_err=error(a, b, x_avg),
+            test_err=error(a_test, b_test, x_avg),
+        )
+
+        eta_t = 1 / np.sqrt(t)
+
+        grad = hinge_loss_grad(a_, b_, x, 0)
+
+        theta[:d] = theta[:d] - eta_t * grad
+        theta[d:] = theta[d:] + eta_t * grad
+
+        w = softmax(theta)
+
+        x = radius * (w[:d] - w[d:])
+
+        # averaging
+        x_avg = (x_avg * (t - 1) + x) / t
+
+    return x, logger
+
+def train_ada_grad(
+    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
+):
+    # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
+    a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
+    a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
+    n, d = a.shape
+
+    # the weights of our SVM classifier
+    # x is the averaged weights (online to batch conversion)
+    x_avg = np.zeros(d)
+    x = np.zeros(d)
+    y = np.zeros(d)
+    DELTA = 1e-5
+    S = np.ones(d) * DELTA
+
+    logger = Logger(algo_tag=rf"P-Seg-pm - $z={radius}$")
+    for t in tqdm(range(1, T + 1)):
+        # pick random sample
+        i = np.random.randint(n)
+        a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
+
+        # log our results (before training, to match plots from the class)
+        logger.log(
+            loss=hinge_loss(a, b, x_avg, 0),
+            train_err=error(a, b, x_avg),
+            test_err=error(a_test, b_test, x_avg),
+        )
+
+        grad = hinge_loss_grad(a_, b_, x, 0)
+        S += grad ** 2
+
+        D_inv = np.diag(1 / S)
+
+        y = x - D_inv.dot(grad)
+        x, d_0, theta = l1_ball_proj(y, radius)
+
+        # averaging
+        x_avg = (x_avg * (t - 1) + x) / t
+
+    return x, logger
+
+
+
 def train_all():
-    dir_data = Path(__file__).resolve().parents[1].joinpath('data/')
+    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
-    # projected gradient descent
-    x, logger_p_ogd = train_proj_online_gradient_descent(
-        a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=1000, alpha=0.33, radius=20.
+    a_test = np.concatenate([x_test, np.ones((len(x_test), 1))], axis=1)
+    results = []
+    x, logger_sgd_proj = train_sgd_proj(
+        a=x_train,
+        b=y_train,
+        a_test=x_test,
+        b_test=y_test,
+        T=100,
+        alpha=0.33,
+        radius=100,
     )
-    # projected gradient descent
-    x, logger_p_gd = train_proj_gradient_descent(
-        a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=100, alpha=0.33, radius=20.
-    )
-    # gradient descent
-    x, logger_gd = train_gradient_descent(
-        a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=100, alpha=0.33
-    )
+    results.append(logger_sgd_proj)
+    print(alpha)
+    print(z)
+    print(error(a_test, y_test, x))
 
-    # plot results
-    plot_results([logger_p_ogd, logger_gd, logger_p_gd])
+    plot_results(results)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     train_all()
