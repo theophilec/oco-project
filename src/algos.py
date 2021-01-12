@@ -1,15 +1,16 @@
 from pathlib import Path
 from typing import List
-from tqdm import tqdm
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib import ticker
+from tqdm import tqdm
 
 from data_utils import load_processed_data
-from projection import l1_ball_proj
+from projection import l1_ball_proj, l1_ball_proj_weighted
 from utils import softmax
 
-np.random.seed(0)
+np.random.seed(10)
 
 
 class Logger:
@@ -201,7 +202,7 @@ def train_sgd_proj(
     # x is weight (online version)
     x = np.zeros(d)
 
-    logger = Logger(algo_tag=rf"P-OGD - $\alpha={alpha} - z={radius}$")
+    logger = Logger(algo_tag=rf"SGDproj - $\alpha={alpha} - z={radius}$")
     for t in tqdm(range(1, T + 1)):
         # pick random sample
         i = np.random.randint(n)
@@ -218,7 +219,6 @@ def train_sgd_proj(
             # our problem is convex (as the hinge loss is a convex function)
             eta_t = 1 / np.sqrt(t)
         else:
-            # thanks to the regularization, our problem is alpha strongly convex
             # eta_t = 2 / (alpha * t)
             eta_t = 1 / (alpha * t)
 
@@ -226,7 +226,6 @@ def train_sgd_proj(
 
         x = x - eta_t * grad
         x, d_0, theta = l1_ball_proj(x, radius)
-        # TODO: we could log d_0 as well?
 
         # averaging
         x_avg = (x_avg * (t - 1) + x) / t
@@ -249,7 +248,7 @@ def train_smd(
     # y is weight (online version)
     y = np.zeros(d)
 
-    logger = Logger(algo_tag=rf"P-SMD - $z={radius}$")
+    logger = Logger(algo_tag=rf"SMD Proj - $z={radius}$")
     for t in tqdm(range(1, T + 1)):
         # pick random sample
         i = np.random.randint(n)
@@ -290,7 +289,7 @@ def train_seg_pm(
     theta = np.zeros(2 * d)
     w = np.zeros(2 * d)
 
-    logger = Logger(algo_tag=rf"P-Seg-pm - $z={radius}$")
+    logger = Logger(algo_tag=rf"Seg +- proj - $z={radius}$")
     for t in tqdm(range(1, T + 1)):
         # pick random sample
         i = np.random.randint(n)
@@ -319,7 +318,8 @@ def train_seg_pm(
 
     return x, logger
 
-def train_ada_grad(
+
+def train_adagrad(
     a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
@@ -335,7 +335,7 @@ def train_ada_grad(
     DELTA = 1e-5
     S = np.ones(d) * DELTA
 
-    logger = Logger(algo_tag=rf"P-Seg-pm - $z={radius}$")
+    logger = Logger(algo_tag=rf"Adagrad - $z={radius}$")
     for t in tqdm(range(1, T + 1)):
         # pick random sample
         i = np.random.randint(n)
@@ -351,10 +351,11 @@ def train_ada_grad(
         grad = hinge_loss_grad(a_, b_, x, 0)
         S += grad ** 2
 
-        D_inv = np.diag(1 / S)
+        D = np.diag(np.sqrt(S))
+        D_inv = np.diag(1 / np.sqrt(S))
 
         y = x - D_inv.dot(grad)
-        x, d_0, theta = l1_ball_proj(y, radius)
+        x, d_0, theta = l1_ball_proj_weighted(y, radius, np.diag(D))
 
         # averaging
         x_avg = (x_avg * (t - 1) + x) / t
@@ -362,27 +363,46 @@ def train_ada_grad(
     return x, logger
 
 
-
 def train_all():
     dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
-    a_test = np.concatenate([x_test, np.ones((len(x_test), 1))], axis=1)
     results = []
-    x, logger_sgd_proj = train_sgd_proj(
+    _, logger = train_seg_pm(
         a=x_train,
         b=y_train,
         a_test=x_test,
         b_test=y_test,
-        T=100,
-        alpha=0.33,
+        T=1000,
         radius=100,
     )
-    results.append(logger_sgd_proj)
-    print(alpha)
-    print(z)
-    print(error(a_test, y_test, x))
-
+    results.append(logger)
+    _, logger = train_seg_pm(
+        a=x_train,
+        b=y_train,
+        a_test=x_test,
+        b_test=y_test,
+        T=1000,
+        radius=50,
+    )
+    _, logger = train_smd(
+        a=x_train,
+        b=y_train,
+        a_test=x_test,
+        b_test=y_test,
+        T=1000,
+        radius=100,
+    )
+    results.append(logger)
+    _, logger = train_smd(
+        a=x_train,
+        b=y_train,
+        a_test=x_test,
+        b_test=y_test,
+        T=1000,
+        radius=50,
+    )
+    results.append(logger)
     plot_results(results)
 
 

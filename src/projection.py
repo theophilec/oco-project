@@ -1,129 +1,86 @@
-import numpy as np
-from numpy.testing import assert_almost_equal
 import typing
 
-def l0_norm(a: np.array):
-    return np.count_nonzero(a)
+import numpy as np
+from numpy.testing import assert_almost_equal
 
 
-def simplex_proj(a: np.array):
+def l0_norm(x: np.array):
+    """Compute the L_0 norm of x."""
+    return np.count_nonzero(x)
 
-    assert (a >= 0).all()
 
-    d = len(a)
+def simplex_proj(x: np.array):
+    """Project x onto the unit simplex."""
 
-    if np.sum(a) <= 1 + 1e-6:
-        return a, d, 0.0
+    assert (x >= 0).all()
+
+    d = len(x)
+
+    if np.sum(x) <= 1 + 1e-6:
+        return x, d, 0.0
 
     # sort largest to smallest
-    a_ = np.flip(np.sort(a))
+    x_ = np.flip(np.sort(x))
 
     # find d_0
-    a_cs = np.cumsum(a_) - 1
-    criterion = a_ > (a_cs / np.arange(1, d + 1))
+    x_cs = np.cumsum(x_) - 1
+    criterion = x_ > (x_cs / np.arange(1, d + 1))
     d_0 = np.sum(criterion)
 
-    theta = a_cs[d_0 - 1] / d_0
+    theta = x_cs[d_0 - 1] / d_0
 
-    return np.maximum(0.0, a - theta), d_0, theta
+    return np.maximum(0.0, x - theta), d_0, theta
 
 
-def l1_ball_proj(a: np.array, radius: float):
+def l1_ball_proj(x: np.array, radius: float):
+    """Project x onto L1 ball according to l2 norm."""
     assert radius > 0
-    d = len(a)
+    d = len(x)
 
-    abs_a = np.abs(a)
-    if np.sum(abs_a) <= radius + 1e-6:
-        return a, d, 0.0
+    abs_x = np.abs(x)
+    if np.sum(abs_x) <= radius + 1e-6:
+        return x, d, 0.0
     else:
-        sign = np.sign(a)
-        simplex_x, d_0, theta = simplex_proj(abs_a / radius)
+        sign = np.sign(x)
+        simplex_x, d_0, theta = simplex_proj(abs_x / radius)
         proj = radius * sign * simplex_x
         assert (np.sum(np.abs(proj)) - radius) < 1e-5
         return proj, d_0, theta
 
 
-if __name__ == "__main__":
+def l1_ball_proj_weighted(x: np.array, radius: float, D: np.array):
+    """Project x onto L1 ball according to weighted l2 norm."""
+    assert radius > 0
+    d = len(x)
 
-    # norm_0(0) == 0
-    x = np.zeros(3)
-    norm = l0_norm(x)
-    assert norm == 0.0
+    if np.sum(np.abs(x)) <= radius + 1e-6:
+        return x, d, 0.0
+    else:
+        x_abs = np.abs(x) / radius
 
-    # norm_0(1) == len(1)
-    x = np.ones(3)
-    norm = l0_norm(x)
-    assert norm == len(x)
+        Dx = D * x_abs
+        argsort = np.argsort(Dx)[::-1]
+        assert Dx[argsort][0] >= Dx[argsort][1]
 
-    # norm_0(rand(3)) == 3 (a.s.)
-    x = np.random.rand(3)
-    norm = l0_norm(x)
-    assert norm == len(x)
+        # find d_0 and theta
+        x_cs = np.cumsum(x_abs[argsort])
+        Dinv_cs = np.cumsum(1 / D[argsort])
+        criterion = Dx[argsort] >= ((x_cs - 1) / Dinv_cs)
+        d_0 = np.sum(criterion)
 
-    # norm_0(1e-5) == len(1)
-    x = 1e-12 * np.ones(3)
-    norm = l0_norm(x)
-    assert norm == len(x)
+        theta = (x_cs[d_0 - 1] - 1) / Dinv_cs[d_0 - 1]
+        # projection of abs(x) / radius
+        simplex_proj = 1 / D * np.maximum(0.0, Dx - theta)
+        proj = simplex_proj * np.sign(x) * radius
+        assert (np.sum(np.abs(proj)) - radius) < 1e-5
+        return proj, d_0, theta
 
-    x = np.array([1.1, 0.6])
-    x_proj, d_0, theta = simplex_proj(x)
-    assert d_0 == l0_norm(x_proj)
+if __name__ == "__test__":
+    d = 10
+    x = np.random.randn(d) * 20
+    radius = 5
+    D = np.ones(d)
+    y = l1_ball_proj_weighted(x, radius, D)
+    y_ = l1_ball_proj(x, radius)
+    assert y == y_
 
-    # exterior point projects to frontier
-    x = np.array([0.6, 1.1])
-    x_proj, d_0, theta = simplex_proj(x)
-    assert_almost_equal(np.sum(x_proj), 1.0, decimal=8)
-    assert d_0 == l0_norm(x_proj)
-
-    # assert
-    x = np.array([0.0, 1.1])
-    x_proj, d_0, theta = simplex_proj(x)
-    assert_almost_equal(np.array([0.0, 1.0]), x_proj, decimal=8)
-    assert d_0 == l0_norm(x_proj)
-
-    x = np.array([1.1, 0.0])
-    x_proj, d_0, theta = simplex_proj(x)
-    assert_almost_equal(np.array([1.0, 0.0]), x_proj, decimal=8)
-    assert d_0 == l0_norm(x_proj)
-
-    # assert inside simplex identical
-    for i in range(100):
-        x = np.random.rand(100)
-        x = x / np.sum(x)
-        x_proj, d_0, theta = simplex_proj(x)
-        assert_almost_equal(x, x_proj, decimal=8)
-        assert d_0 == l0_norm(x_proj)
-
-    # assert inside B(z) identical
-    for i in range(100):
-        radius = 10
-        x = np.random.rand(100)
-        x = x / np.sum(x) * radius
-        x_proj, d_0, theta = l1_ball_proj(x, radius)
-        assert_almost_equal(x, x_proj, decimal=8)
-        assert 100 == l0_norm(x_proj)
-
-    # assert
-    x = np.array([0.0, 1.1])
-    x_proj, d_0, theta = l1_ball_proj(x, 1)
-    assert_almost_equal(np.array([0.0, 1.0]), x_proj, decimal=8)
-    assert d_0 == l0_norm(x_proj)
-
-    x = np.array([1.1, 0.0])
-    x_proj, d_0, theta = l1_ball_proj(x, 1)
-    assert_almost_equal(np.array([1.0, 0.0]), x_proj, decimal=8)
-    assert d_0 == l0_norm(x_proj)
-
-    x = np.array([1.1, 0.1])
-    x_proj, d_0, theta = l1_ball_proj(x, 1)
-    assert_almost_equal(np.array([1.0, 0.0]), x_proj, decimal=8)
-    assert d_0 == l0_norm(x_proj)
-
-    x = np.array([10.10, 0.0])
-    x_proj, d_0, theta = l1_ball_proj(x, 10)
-    assert_almost_equal(np.array([10.0, 0.0]), x_proj, decimal=8)
-    assert d_0 == l0_norm(x_proj)
-
-    x = np.array([10.10, 1.0, 45.0])
-    x_proj, d_0, theta = l1_ball_proj(x, 10)
-    assert (np.sum(np.abs(x_proj)) - radius) < 1e-5

@@ -1,9 +1,8 @@
-import pytest
-
 import numpy as np
+import pytest
 from numpy.testing import assert_almost_equal
 
-from projection import l0_norm, simplex_proj, l1_ball_proj
+from projection import l0_norm, l1_ball_proj, simplex_proj
 
 
 def test_norm_zeros():
