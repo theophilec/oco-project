@@ -1,7 +1,7 @@
-import numpy as np
 from typing import List
 
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib import ticker
 
 
@@ -17,7 +17,7 @@ class Logger:
         self.train_error = []
         self.test_error = []
 
-    def log(self, iteration:int, loss: float, train_err: float, test_err: float):
+    def log(self, iteration: int, loss: float, train_err: float, test_err: float):
         self.iterations.append(iteration)
         self.loss.append(loss)
         self.train_error.append(train_err)
@@ -101,4 +101,3 @@ def hinge_loss_grad(a: np.array, b: np.array, x: np.array, alpha: float):
     sum_grad_l_i = (mask * b).dot(a)  # (d,)
     grad = -(1 / n) * sum_grad_l_i + alpha * x  # (d,)
     return grad
-

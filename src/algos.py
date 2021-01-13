@@ -5,11 +5,9 @@ from tqdm import tqdm
 
 from data_utils import load_processed_data
 from projection import l1_ball_proj, l1_ball_proj_weighted
-from utils import softmax, Logger, plot_results, error, hinge_loss, hinge_loss_grad
+from utils import Logger, error, hinge_loss, hinge_loss_grad, plot_results, softmax
 
 np.random.seed(10)
-
-
 
 
 def train_gd(
@@ -93,6 +91,7 @@ def train_gd_proj(
 
     return x, logger
 
+
 def train_sgd(
     a: np.array,
     b: np.array,
@@ -116,7 +115,7 @@ def train_sgd(
     I = np.random.randint(0, n, T)
     for t in tqdm(range(1, T + 1)):
         # pick random sample
-        i = I[t-1]
+        i = I[t - 1]
         a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
 
         # log our results (before training, to match plots from the class)
@@ -170,7 +169,7 @@ def train_sgd_proj(
     I = np.random.randint(0, n, T)
     for t in tqdm(range(1, T + 1)):
         # pick random sample
-        i = I[t-1]
+        i = I[t - 1]
         a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
 
         # log our results (before training, to match plots from the class)
@@ -220,7 +219,7 @@ def train_smd(
     I = np.random.randint(0, n, T)
     for t in tqdm(range(1, T + 1)):
         # pick random sample
-        i = I[t-1]
+        i = I[t - 1]
         a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
 
         # log our results (before training, to match plots from the class)
@@ -265,7 +264,7 @@ def train_seg_pm(
     I = np.random.randint(0, n, T)
     for t in tqdm(range(1, T + 1)):
         # pick random sample
-        i = I[t-1]
+        i = I[t - 1]
         a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
 
         # log our results (before training, to match plots from the class)
@@ -315,7 +314,7 @@ def train_adagrad(
     I = np.random.randint(0, n, T)
     for t in tqdm(range(1, T + 1)):
         # pick random sample
-        i = I[t-1]
+        i = I[t - 1]
         a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
 
         # log our results (before training, to match plots from the class)
@@ -343,6 +342,66 @@ def train_adagrad(
     return x, logger
 
 
+def train_ons(
+    a: np.array,
+    b: np.array,
+    a_test: np.array,
+    b_test: np.array,
+    T: int,
+    gamma: float,
+    alpha: float,
+    radius: float,
+):
+    # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
+    a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
+    a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
+    n, d = a.shape
+
+    # the weights of our SVM classifier
+    # x is the averaged weights (online to batch conversion)
+    x = np.zeros(d)
+    y = np.zeros(d)
+    A = 1 / gamma ** 2 * np.ones(d)
+    A_inv = gamma ** 2 * np.ones(d)
+    DELTA = 1e-5
+    S = np.ones(d) * DELTA
+
+    logger = Logger(
+        algo_tag=rf"ONS - $\alpha = {alpha} - \gamma = {gamma} - z={radius}$"
+    )
+    I = np.random.randint(0, n, T)
+    for t in tqdm(range(1, T + 1)):
+        # pick random sample
+        i = I[t - 1]
+        a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
+
+        # log our results (before training, to match plots from the class)
+        k = max(int(np.log10(t)), 0)
+        if t % int(10 ** k) == 1 or t < 10:
+            logger.log(
+                iteration=t,
+                loss=hinge_loss(a, b, x_avg, 0),
+                train_err=error(a, b, x_avg),
+                test_err=error(a_test, b_test, x_avg),
+            )
+
+        grad = hinge_loss_grad(a_, b_, x, alpha)
+        gg = np.outer(grad, grad)
+        assert gg.shape == (d, d)
+        A += gg
+        num = A_inv.dot(gg).dot(A_inv)
+        denum = 1 + grad.dot(A_inv).dot(grad)
+        A_inv -= num / denum
+
+        y = x - 1 / gamma * A_inv.dot(grad)
+        x, d_0, theta = l1_ball_proj_weighted(y, radius, np.diag(A))
+
+        # averaging
+        x_avg = (x_avg * (t - 1) + x) / t
+
+    return x, logger
+
+
 def train_all():
     dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
@@ -356,8 +415,8 @@ def train_all():
         a_test=x_test,
         b_test=y_test,
         T=1000,
-        #radius=100,
-        alpha=alpha
+        # radius=100,
+        alpha=alpha,
     )
     results.append(logger)
     plot_results(results)
@@ -370,7 +429,7 @@ def train_all():
         b_test=y_test,
         T=100,
         radius=100,
-        alpha=alpha
+        alpha=alpha,
     )
     results.append(logger)
     plot_results(results)
