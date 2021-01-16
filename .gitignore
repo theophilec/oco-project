@@ -1,3 +1,7 @@
+figures
+src/joblib_memmap
+**/.DS_Store
+
 # Large data files
 data/processed/*
 !data/processed/.gitkeep

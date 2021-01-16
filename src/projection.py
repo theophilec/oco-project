@@ -73,11 +73,11 @@ def l1_ball_proj_weighted(x: np.array, radius: float, D: np.array):
         return proj, d_0, theta
 
 
-if __name__ == "__test__":
+if __name__ == "__main__":
     d = 10
     x = np.random.randn(d) * 20
     radius = 5
     D = np.ones(d)
-    y = l1_ball_proj_weighted(x, radius, D)
-    y_ = l1_ball_proj(x, radius)
-    assert y == y_
+    y, _, _ = l1_ball_proj_weighted(x, radius, D)
+    y_, _, _ = l1_ball_proj(x, radius)
+    assert (y == y_).all()
