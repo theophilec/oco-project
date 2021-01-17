@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 def load_raw_data(dir_data: Path, print_descriptive_stats: bool):
@@ -45,6 +46,7 @@ def load_raw_data(dir_data: Path, print_descriptive_stats: bool):
             f"in train set : {counts_train[1]}/{counts_train.sum()} = {freq_0_train:.3f}\n"
             f"in test set : {counts_test[1]}/{counts_test.sum()} = {freq_0_test:.3f}"
         )
+        mnist_sparsity_analysis(a=x_train)
 
     return x_train, y_train, x_test, y_test
 
@@ -88,6 +90,42 @@ def save_data(dir_data: Path, x_train, y_train, x_test, y_test):
     np.save(str(dir_data.joinpath("processed/x_test")), x_test)
     np.save(str(dir_data.joinpath("processed/y_train")), y_train)
     np.save(str(dir_data.joinpath("processed/y_test")), y_test)
+
+
+def mnist_sparsity_analysis(a: np.array):
+    """
+
+    Args:
+        a: Input data of shape (N, d) with d=784
+
+    Returns:
+
+    """
+    n, d = a.shape
+    # for each example, number of non-zero features
+    features_count = np.sum(a > 0, axis=1)
+    omega = np.max(features_count)
+
+    # for each feature, frequency of non-zero in the training data
+    feature_freq = np.sum(a > 0, axis=0) / n
+    delta = np.max(feature_freq)
+
+    features_in_common = []
+    for a_i in a:
+        e = a_i > 0  # (d,)
+        e_hat = a > 0  # (N, d)
+        # for example a_i, number of examples which have at least one feature in common
+        f_common = np.logical_and(e, e_hat).any(axis=1).sum()
+        features_in_common.append(f_common)
+        if f_common == n:  # max number
+            break
+    rho = max(features_in_common)
+
+    print(f'n={n}, d={d}, omega = {omega}, delta={delta}, rho={rho}')
+
+    plt.imshow(feature_freq.reshape((28, 28)))
+    plt.colorbar()
+    plt.show()
 
 
 def main():
