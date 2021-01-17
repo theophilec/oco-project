@@ -4,6 +4,7 @@ import sys
 from ctypes import c_double
 from datetime import datetime
 from pathlib import Path
+import random
 from types import ModuleType
 
 import numpy as np
@@ -12,7 +13,7 @@ from tqdm import tqdm
 
 from data_utils import load_processed_data
 from projection import l1_ball_proj, l1_ball_proj_weighted
-from utils import Logger, error, hinge_loss, hinge_loss_grad, plot_results, softmax, AvgLogger
+from utils import Logger, error, hinge_loss, hinge_loss_grad, plot_results_, softmax, AvgLogger, hinge_loss_grad_partial
 
 
 def train_gd(
@@ -156,7 +157,9 @@ def train_sgd_proj(
     T: int,
     alpha: float,
     radius: float,
+    seed: int,
 ):
+    np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
@@ -204,8 +207,9 @@ def train_sgd_proj(
 
 
 def train_smd(
-    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
+    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float, seed: int
 ):
+    np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
@@ -249,8 +253,9 @@ def train_smd(
 
 
 def train_seg_pm(
-    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
+    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float, seed:int
 ):
+    np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
@@ -296,10 +301,62 @@ def train_seg_pm(
 
     return x, logger
 
+def train_sreg_pm(
+    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float, seed: int
+):
+    np.random.seed(seed)
+    a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
+    a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
+    n, d = a.shape
+
+    x_avg = np.zeros(d)
+    x = np.zeros(d)
+    w = np.ones(2 * d) / (2 * d)
+    directions = np.arange(d)
+    I = np.random.randint(0, n, T)
+    logger = Logger(algo_tag=rf"SREG $\pm$ proj - $z={radius}$")
+    for t in tqdm(range(1, T + 1)):
+        direction = random.choices(directions, weights=0.5 * (w[:d] + w[d:]))[0]
+        # pick random sample
+        i = I[t - 1]
+        a_, b_ = a[i][np.newaxis, :], np.array([b[i]])
+
+        # log our results (before training, to match plots from the class)
+        k = max(int(np.log10(t)), 0)
+        if t % int(10 ** k) == 1 or t < 10:
+            logger.log(
+                iteration=t,
+                loss=hinge_loss(a, b, x_avg, 0),
+                train_err=error(a, b, x_avg),
+                test_err=error(a_test, b_test, x_avg),
+            )
+
+        eta_t = 1 / np.sqrt(t)
+
+        grad = hinge_loss_grad_partial(a_, b_, x, 0, direction)
+
+        if grad > 0:
+            if abs(w[direction]) > 1e-9:
+                w[direction] = np.exp(- eta_t * grad / w[direction]) * w[direction]
+        else:
+            if abs(w[direction + d]) > 1e-9:
+                w[direction + d] = np.exp(eta_t * grad / w[direction + d]) * w[direction+d]
+
+        w = w / np.sum(w)
+
+        x = radius * (w[:d] - w[d:])
+
+        # averaging
+        x_avg = (x_avg * (t - 1) + x) / t
+
+    return x, logger
+
+
 
 def train_adagrad(
-    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
+    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float, seed:int
 ):
+    np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
@@ -344,7 +401,6 @@ def train_adagrad(
 
     return x, logger
 
-
 def train_ons(
     a: np.array,
     b: np.array,
@@ -354,7 +410,9 @@ def train_ons(
     gamma: float,
     alpha: float,
     radius: float,
+    seed:int
 ):
+    np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
@@ -362,12 +420,11 @@ def train_ons(
 
     # the weights of our SVM classifier
     # x is the averaged weights (online to batch conversion)
+    x_avg = np.zeros(d)
     x = np.zeros(d)
     y = np.zeros(d)
-    A = 1 / gamma ** 2 * np.ones(d)
-    A_inv = gamma ** 2 * np.ones(d)
-    DELTA = 1e-5
-    S = np.ones(d) * DELTA
+    A = 1 / gamma ** 2 * np.eye(d)
+    A_inv = gamma ** 2 * np.eye(d)
 
     logger = Logger(
         algo_tag=rf"ONS - $\alpha = {alpha} - \gamma = {gamma} - z={radius}$"
@@ -380,10 +437,10 @@ def train_ons(
 
         # log our results (before training, to match plots from the class)
         k = max(int(np.log10(t)), 0)
-        if t % int(10 ** k) == 1 or t < 10:
+        if t % int(10 ** k) == 0 or t < 10:
             logger.log(
                 iteration=t,
-                loss=hinge_loss(a, b, x_avg, 0),
+                loss=hinge_loss(a, b, x_avg, alpha),
                 train_err=error(a, b, x_avg),
                 test_err=error(a_test, b_test, x_avg),
             )
@@ -488,67 +545,118 @@ def plot_hogwild():
 
     plot_results(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")
 
+def sgd_sgdproj_var():
+    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
+    x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
+    results = []
+
+    n_runs = 10
+    T = 10000
+    alpha = 0.1
+    radius = 100
+    results.append(AvgLogger([
+        train_sgd(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, return_avg=True, seed=s)[1]
+        for s in range(n_runs)]))
+    results.append(AvgLogger([
+        train_sgd_proj(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, radius=100, seed=s)[1]
+        for s in range(n_runs)]))
+
+    plot_results_(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")
+def sgdproj_smd_var():
+    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
+    x_train, y_train, x_test, y_test = load_processed_data(dir_data)
+
+    results = []
+
+    n_runs = 10
+    T = 10000
+    alpha = 0.1
+    radius = 100
+    results.append(AvgLogger([
+        train_smd(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, radius=radius, seed=s)[1]
+        for s in range(n_runs)]))
+    results.append(AvgLogger([
+        train_sgd_proj(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, radius=100, seed=s)[1]
+        for s in range(n_runs)]))
+
+    plot_results_(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")
+def sgdproj_segpm_var():
+    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
+    x_train, y_train, x_test, y_test = load_processed_data(dir_data)
+
+    results = []
+
+    n_runs = 5
+    T = 10000
+    alpha = 0.1
+    radius = 100
+    results.append(AvgLogger([
+        train_seg_pm(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, radius=radius, seed=s)[1]
+        for s in range(n_runs)]))
+    results.append(AvgLogger([
+        train_sgd_proj(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, radius=100, seed=s)[1]
+        for s in range(n_runs)]))
+
+    plot_results_(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")
+
+def sgd_adagrad_var():
+    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
+    x_train, y_train, x_test, y_test = load_processed_data(dir_data)
+
+    results = []
+
+    n_runs = 5
+    T = 10000
+    alpha = 0.1
+    radius = 100
+    results.append(AvgLogger([
+        train_adagrad(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, radius=radius, seed=s)[1]
+        for s in range(n_runs)]))
+    results.append(AvgLogger([
+        train_sgd_proj(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, radius=100, seed=s)[1]
+        for s in range(n_runs)]))
+
+    plot_results_(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")
+def seg_sreg_var():
+    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
+    x_train, y_train, x_test, y_test = load_processed_data(dir_data)
+
+    results = []
+
+    n_runs = 5
+    T = 100000
+    alpha = 0.1
+    radius = 100
+    gamma=0.1
+    results.append(AvgLogger([
+        train_sreg_pm(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, radius=radius, seed=s)[1]
+        for s in range(n_runs)]))
+    results.append(AvgLogger([
+        train_sgd_proj(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, radius=100, seed=s)[1]
+        for s in range(n_runs)]))
+
+    plot_results_(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")
 def train_all():
     dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
-    # for alpha in [0.01, 0.1, 0.5, 1.0]:
+
+    n_runs = 5
+    T = 1000
     alpha = 0.1
-    _, logger = train_gd(
-        a=x_train,
-        b=y_train,
-        a_test=x_test,
-        b_test=y_test,
-        T=1000,
-        # radius=100,
-        alpha=alpha,
-    )
-    results.append(logger)
-    plot_results(results)
-    quit()
-    results.append(logger)
-    _, logger = train_sgd_proj(
-        a=x_train,
-        b=y_train,
-        a_test=x_test,
-        b_test=y_test,
-        T=100,
-        radius=100,
-        alpha=alpha,
-    )
-    results.append(logger)
-    plot_results(results)
-    quit()
-    results.append(logger)
-    _, logger = train_seg_pm(
-        a=x_train,
-        b=y_train,
-        a_test=x_test,
-        b_test=y_test,
-        T=1000,
-        radius=50,
-    )
-    _, logger = train_smd(
-        a=x_train,
-        b=y_train,
-        a_test=x_test,
-        b_test=y_test,
-        T=1000,
-        radius=100,
-    )
-    results.append(logger)
-    _, logger = train_smd(
-        a=x_train,
-        b=y_train,
-        a_test=x_test,
-        b_test=y_test,
-        T=1000,
-        radius=50,
-    )
-    results.append(logger)
-    plot_results(results)
+    radius = 100
+    gamma=0.1
+    results.append(AvgLogger([
+        train_ons(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, gamma=gamma, radius=radius, seed=s, alpha=alpha)[1]
+        for s in range(n_runs)]))
+    results.append(AvgLogger([
+        train_sgd_proj(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, radius=100, seed=s)[1]
+        for s in range(n_runs)]))
+
+    plot_results_(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")
+
 
 
 if __name__ == "__main__":
@@ -558,4 +666,4 @@ if __name__ == "__main__":
     except FileExistsError:
         pass
 
-    plot_hogwild()
+    train_all()
