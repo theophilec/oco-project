@@ -1,11 +1,9 @@
 import os
-import shutil
-import sys
-from ctypes import c_double
 from datetime import datetime
 from pathlib import Path
 import random
 from types import ModuleType
+from time import perf_counter_ns
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -14,6 +12,12 @@ from tqdm import tqdm
 from data_utils import load_processed_data
 from projection import l1_ball_proj, l1_ball_proj_weighted
 from utils import Logger, error, hinge_loss, hinge_loss_grad, plot_results_, softmax, AvgLogger, hinge_loss_grad_partial
+
+folder = './joblib_memmap'
+try:
+    os.mkdir(folder)
+except FileExistsError:
+    pass
 
 
 def train_gd(
@@ -99,7 +103,7 @@ def train_gd_proj(
 
 
 def train_sgd(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float, return_avg: bool,
-              seed: int):
+              seed: int, use_logger=True):
     np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -111,7 +115,10 @@ def train_sgd(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: i
     x_avg = np.zeros(d)
     x = np.zeros(d)
 
-    logger = Logger(algo_tag=rf"SGD - {'x_avg' if return_avg else 'x_T'}")
+    if use_logger:
+        logger = Logger(algo_tag=rf"SGD - {'x_avg' if return_avg else 'x_T'}")
+
+    t0 = perf_counter_ns()
 
     I = np.random.randint(0, n, T)
     for t in tqdm(range(1, T + 1)):
@@ -127,13 +134,14 @@ def train_sgd(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: i
 
         # log our results (before training, to match plots from the class)
         k = max(int(np.log10(t)), 0)
-        if t % int(10 ** k) == 1 or t < 10:
+        if (t % int(10 ** k) == 1 or t < 10) and use_logger:
             logger.log(
                 iteration=t,
                 loss=hinge_loss(a, b, x_avg, alpha),
                 train_err=error(a, b, x_avg),
                 test_err=error(a_test, b_test, x_avg),
                 eta_t=eta_t,
+                time_elapsed=(perf_counter_ns() - t0) / 1e9
             )
 
         grad = hinge_loss_grad(a_, b_, x, alpha)
@@ -146,7 +154,11 @@ def train_sgd(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: i
         else:
             x_avg = x
 
-    return x_avg, logger
+    dt = (perf_counter_ns() - t0) / 1e9  # execution time in sec
+    if use_logger:
+        return x_avg, logger
+    else:
+        return dt, T, error(a_test, b_test, x)
 
 
 def train_sgd_proj(
@@ -472,9 +484,8 @@ def train_epoch_hogwild(x, a, b, I_p, eta, alpha):
 
 
 def train_hogwild(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float, K: int,
-                  beta: float, theta: float, n_processes: int, sequential: bool, exp_lr_decay: bool, seed: int):
+                  beta: float, theta: float, n_processes: int, sequential: bool, seed: int, use_logger=True):
     np.random.seed(seed)
-
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
     n, d = a.shape
@@ -483,16 +494,24 @@ def train_hogwild(a: np.array, b: np.array, a_test: np.array, b_test: np.array, 
     x_memmap = os.path.join(folder, f'x_{datetime.now().strftime("%H%M%S")}')
     x = np.memmap(x_memmap, dtype=a.dtype, shape=d, mode='w+')
 
-    logger = Logger(algo_tag=rf"Hogwild {'seq' if sequential else ''}- $\beta={beta}, K={K}, \theta={theta}$, "
-                             rf"n_jobs={n_processes}")
-    progress_bar = tqdm(total=T)
+    print(f'Training hogwild with seed {seed}')
+    if use_logger:
+        logger = Logger(algo_tag=rf"Hogwild {'seq' if sequential else f'n_jobs={n_processes}'}- $K={K}$")
+
+    t0 = perf_counter_ns()
     t = 1
     eta_t = theta / alpha
     while t <= T:
-        logger.log(iteration=t, loss=hinge_loss(a, b, x, alpha), train_err=error(a, b, x),
-                   test_err=error(a_test, b_test, x), eta_t=eta_t, )
+        if use_logger:
+            logger.log(iteration=t, loss=hinge_loss(a, b, x, alpha), train_err=error(a, b, x),
+                       test_err=error(a_test, b_test, x), eta_t=eta_t, time_elapsed=(perf_counter_ns() - t0) / 1e9)
 
-        indices = [np.random.randint(0, n, K) for p in range(n_processes)]
+        # don't do more steps than necessary
+        if t + K * n_processes < T:
+            steps_per_processor = K
+        else:
+            steps_per_processor = int((T - t) / n_processes)
+        indices = [np.random.randint(0, n, steps_per_processor) for p in range(n_processes)]
         if sequential:
             # mimic Hogwild without multiprocessing (similar to SGD)
             for I_p in indices:
@@ -503,47 +522,45 @@ def train_hogwild(a: np.array, b: np.array, a_test: np.array, b_test: np.array, 
 
         # increase the number of steps and decrease the learning rate
         K = int(K / beta)
-        if exp_lr_decay:
-            eta_t = beta * eta_t  # original learning rate from the paper
-        else:
-            eta_t = 1 / (alpha * t)  # mimic what we have for sgd
+        eta_t = beta * eta_t  # original learning rate from the paper
         t += K * n_processes
-        progress_bar.update(K * n_processes)
 
-    logger.log(iteration=t, loss=hinge_loss(a, b, x, alpha), train_err=error(a, b, x),
-               test_err=error(a_test, b_test, x), eta_t=eta_t, )
-
-    return x, logger
+    dt = (perf_counter_ns() - t0) / 1e9  # execution time in sec
+    if use_logger:
+        logger.log(iteration=t, loss=hinge_loss(a, b, x, alpha), train_err=error(a, b, x),
+                   test_err=error(a_test, b_test, x), eta_t=eta_t, time_elapsed=dt)
+        return x, logger
+    else:
+        return dt, t, error(a_test, b_test, x)
 
 
 def plot_hogwild():
     dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
-    results = []
-
-    n_runs = 5
+    n_runs = 3
+    n_workers = 8
     T = 1000000
     alpha = 0.33
-    K = 3
     beta = 0.37
     theta = 0.2
-    results.append(AvgLogger([
-        train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta, K=K, theta=theta,
-                      exp_lr_decay=True, n_processes=4, sequential=False, seed=s)[1]
-        for s in range(n_runs)]))
-    results.append(AvgLogger([
-        train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta, K=K, theta=theta,
-                      exp_lr_decay=True, n_processes=4, sequential=True, seed=s)[1]
-        for s in range(n_runs)]))
-    results.append(AvgLogger([
-        train_sgd(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, return_avg=False, seed=s)[1]
-        for s in range(n_runs)]))
+    results = []
     results.append(AvgLogger([
         train_sgd(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, return_avg=True, seed=s)[1]
-        for s in range(n_runs)]))
+        for s in range(n_runs)
+    ]))
+    results = [AvgLogger([
+        train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta,
+                      K=K, theta=theta, n_processes=n_workers, sequential=False, seed=s)[1]
+        for s in range(n_runs)
+    ]) for K in [3]]
+    results.append(AvgLogger([
+        train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta,
+                      K=3, theta=theta, n_processes=n_workers, sequential=True, seed=s)[1]
+        for s in range(n_runs)
+    ]))
 
-    plot_results(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")
+    plot_results(results, add_to_title=rf" ($\alpha={alpha}, \beta={beta}, \theta={theta}$, n_runs={n_runs})")
 
 def sgd_sgdproj_var():
     dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
