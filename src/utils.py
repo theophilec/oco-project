@@ -51,6 +51,43 @@ class AvgLogger:
         self.time_elapsed_p5 = np.percentile(np.array([log.time_elapsed for log in loggers]).T, 5, axis=1)
 
 
+def plot_results(loggers: List[Union[Logger, AvgLogger]], add_to_title=''):
+    # Create plots and set axes
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(6, 12))
+    ax1.set_title(rf"test error{add_to_title}")
+    ax2.set_title(rf"step size $\eta_t${add_to_title}")
+    ax3.set_title(rf"time (s.){add_to_title}")
+    for ax in [ax1, ax2, ax3]:
+        # log scale for error plots
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
+        ax.yaxis.set_major_formatter(ticker.ScalarFormatter())
+
+    # log results from our algorithms
+    for logger in loggers:
+        plot_std = isinstance(logger, AvgLogger)
+        x = logger.iterations
+        # test error
+        ax1.plot(x, logger.test_error, label=logger.tag, marker='x')
+        if plot_std:
+            ax1.fill_between(x, logger.test_error_p5, logger.test_error_p95, alpha=0.33)
+        # step size
+        if len(logger.eta_t) > 0:
+            ax2.plot(x, logger.eta_t, label=logger.tag, marker='x')
+        # time elapsed
+        if len(logger.time_elapsed) > 0:
+            ax3.plot(x, logger.time_elapsed, label=logger.tag, marker='x')
+            if plot_std:
+                ax3.fill_between(x, logger.time_elapsed_p5, logger.time_elapsed_p95, alpha=0.33)
+
+    # show the plot
+    for ax in [ax1]:#, ax2, ax3]:
+        ax.legend()
+    fig.tight_layout()
+    plt.savefig(f'../figures/{datetime.now().strftime("%d_%H%M%S")}.png', dpi=300)
+    plt.show()
+
 def plot_results_(loggers: List[Union[Logger, AvgLogger]], add_to_title=''):
     # Create plots and set axes
     #fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(6, 12))
