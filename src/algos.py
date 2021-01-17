@@ -415,23 +415,22 @@ def train_epoch_hogwild(x, a, b, I_p, eta, alpha):
 
 
 def train_hogwild(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float, K: int,
-                  beta: float, n_processes: int, sequential: bool, exp_lr_decay: bool, seed: int):
+                  beta: float, theta: float, n_processes: int, sequential: bool, exp_lr_decay: bool, seed: int):
     np.random.seed(seed)
 
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
     a_test = np.concatenate([a_test, np.ones((len(a_test), 1))], axis=1)
-    a_sparse = a
     n, d = a.shape
 
-    # create x with shared memory, so that all processes can write to it
+    # create x using a shared memory, so that all processes can write to it
     x_memmap = os.path.join(folder, f'x_{datetime.now().strftime("%H%M%S")}')
     x = np.memmap(x_memmap, dtype=a.dtype, shape=d, mode='w+')
 
-    logger = Logger(algo_tag=rf"Hogwild {'seq' if sequential else ''}- $\beta={beta}, K={K}$, "
+    logger = Logger(algo_tag=rf"Hogwild {'seq' if sequential else ''}- $\beta={beta}, K={K}, \theta={theta}$, "
                              rf"n_jobs={n_processes}")
     progress_bar = tqdm(total=T)
     t = 1
-    eta_t = 1 / alpha
+    eta_t = theta / alpha
     while t <= T:
         logger.log(iteration=t, loss=hinge_loss(a, b, x, alpha), train_err=error(a, b, x),
                    test_err=error(a_test, b_test, x), eta_t=eta_t, )
@@ -440,10 +439,10 @@ def train_hogwild(a: np.array, b: np.array, a_test: np.array, b_test: np.array, 
         if sequential:
             # mimic Hogwild without multiprocessing (similar to SGD)
             for I_p in indices:
-                train_epoch_hogwild(x, a_sparse, b, I_p, eta_t, alpha)
+                train_epoch_hogwild(x, a, b, I_p, eta_t, alpha)
         else:
             Parallel(n_jobs=n_processes, verbose=0)(
-                delayed(train_epoch_hogwild)(x, a_sparse, b, I_p, eta_t, alpha) for I_p in indices)
+                delayed(train_epoch_hogwild)(x, a, b, I_p, eta_t, alpha) for I_p in indices)
 
         # increase the number of steps and decrease the learning rate
         K = int(K / beta)
@@ -467,20 +466,24 @@ def plot_hogwild():
     results = []
 
     n_runs = 5
-    T = 10000
+    T = 1000000
     alpha = 0.33
-    K = 10
-    beta = 0.8
+    K = 3
+    beta = 0.37
+    theta = 0.2
     results.append(AvgLogger([
-        train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta, K=K,
-                      exp_lr_decay=False, n_processes=4, sequential=False, seed=s)[1]
+        train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta, K=K, theta=theta,
+                      exp_lr_decay=True, n_processes=4, sequential=False, seed=s)[1]
         for s in range(n_runs)]))
     results.append(AvgLogger([
-        train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta, K=K,
-                      exp_lr_decay=False, n_processes=4, sequential=True, seed=s)[1]
+        train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta, K=K, theta=theta,
+                      exp_lr_decay=True, n_processes=4, sequential=True, seed=s)[1]
         for s in range(n_runs)]))
     results.append(AvgLogger([
         train_sgd(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, return_avg=False, seed=s)[1]
+        for s in range(n_runs)]))
+    results.append(AvgLogger([
+        train_sgd(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, return_avg=True, seed=s)[1]
         for s in range(n_runs)]))
 
     plot_results(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")

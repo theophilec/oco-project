@@ -38,26 +38,19 @@ class AvgLogger:
         self.eta_t = np.array([log.eta_t for log in loggers]).T.mean(axis=1)
 
         self.loss = np.array([log.loss for log in loggers]).T.mean(axis=1)
-        self.train_error = np.array([log.train_error for log in loggers]).T.mean(axis=1)
         self.test_error = np.array([log.test_error for log in loggers]).T.mean(axis=1)
 
-        self.train_error_std = np.array([log.train_error for log in loggers]).T.std(axis=1)
         self.test_error_std = np.array([log.test_error for log in loggers]).T.std(axis=1)
-
-        self.train_error_p95 = np.percentile(np.array([log.train_error for log in loggers]).T, 95, axis=1)
         self.test_error_p95 = np.percentile(np.array([log.test_error for log in loggers]).T, 95, axis=1)
-        self.train_error_p5 = np.percentile(np.array([log.train_error for log in loggers]).T, 5, axis=1)
         self.test_error_p5 = np.percentile(np.array([log.test_error for log in loggers]).T, 5, axis=1)
 
 
 def plot_results(loggers: List[Union[Logger, AvgLogger]], add_to_title=''):
     # Create plots and set axes
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(6, 12))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
     ax1.set_title(rf"test error{add_to_title}")
-    ax2.set_title(rf"train error{add_to_title}")
-    # ax3.set_title("training loss")
-    ax3.set_title(rf"step size $\eta_t${add_to_title}")
-    for ax in [ax1, ax2, ax3]:
+    ax2.set_title(rf"step size $\eta_t${add_to_title}")
+    for ax in [ax1, ax2]:
         # log scale for error plots
         ax.set_xscale("log")
         ax.set_yscale("log")
@@ -72,16 +65,12 @@ def plot_results(loggers: List[Union[Logger, AvgLogger]], add_to_title=''):
         ax1.plot(x, logger.test_error, label=logger.tag, marker='x')
         if plot_std:
             ax1.fill_between(x, logger.test_error_p5, logger.test_error_p95, alpha=0.33)
-        # train error
-        ax2.plot(x, logger.train_error, label=logger.tag, marker='x')
-        if plot_std:
-            ax2.fill_between(x, logger.train_error_p5, logger.train_error_p95, alpha=0.33)
         # step size
         if len(logger.eta_t) > 0:
-            ax3.plot(x, logger.eta_t, label=logger.tag, marker='x')
+            ax2.plot(x, logger.eta_t, label=logger.tag, marker='x')
 
     # show the plot
-    for ax in [ax1, ax2, ax3]:
+    for ax in [ax1, ax2]:
         ax.legend()
     plt.savefig(f'../figures/{datetime.now().strftime("%d_%H%M%S")}.png', dpi=300)
     plt.show()
