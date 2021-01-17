@@ -110,16 +110,16 @@ def mnist_sparsity_analysis(a: np.array):
     feature_freq = np.sum(a > 0, axis=0) / n
     delta = np.max(feature_freq)
 
-    features_in_common = []
+    ex_with_features_in_common = []
     for a_i in a:
         e = a_i > 0  # (d,)
         e_hat = a > 0  # (N, d)
         # for example a_i, number of examples which have at least one feature in common
         f_common = np.logical_and(e, e_hat).any(axis=1).sum()
-        features_in_common.append(f_common)
+        ex_with_features_in_common.append(f_common)
         if f_common == n:  # max number
             break
-    rho = max(features_in_common)
+    rho = max(ex_with_features_in_common) / n
 
     print(f'n={n}, d={d}, omega = {omega}, delta={delta}, rho={rho}')
 

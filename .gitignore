@@ -1,5 +1,7 @@
 figures
+figures_remote
 src/joblib_memmap
+csv_results
 **/.DS_Store
 
 # Large data files
