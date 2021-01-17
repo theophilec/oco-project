@@ -18,14 +18,17 @@ class Logger:
         self.train_error = []
         self.test_error = []
         self.eta_t = []
+        self.time_elapsed = []
 
-    def log(self, iteration: int, loss: float, train_err: float, test_err: float, eta_t=-1.):
+    def log(self, iteration: int, loss: float, train_err: float, test_err: float, eta_t=-1., time_elapsed=-1.):
         self.iterations.append(iteration)
         self.loss.append(loss)
         self.train_error.append(train_err)
         self.test_error.append(test_err)
         if eta_t > 0.:
             self.eta_t.append(eta_t)
+        if time_elapsed > 0.:
+            self.time_elapsed.append(time_elapsed)
 
 
 class AvgLogger:
@@ -39,18 +42,22 @@ class AvgLogger:
 
         self.loss = np.array([log.loss for log in loggers]).T.mean(axis=1)
         self.test_error = np.array([log.test_error for log in loggers]).T.mean(axis=1)
+        self.time_elapsed = np.array([log.time_elapsed for log in loggers]).T.mean(axis=1)
 
         self.test_error_std = np.array([log.test_error for log in loggers]).T.std(axis=1)
         self.test_error_p95 = np.percentile(np.array([log.test_error for log in loggers]).T, 95, axis=1)
         self.test_error_p5 = np.percentile(np.array([log.test_error for log in loggers]).T, 5, axis=1)
+        self.time_elapsed_p95 = np.percentile(np.array([log.time_elapsed for log in loggers]).T, 95, axis=1)
+        self.time_elapsed_p5 = np.percentile(np.array([log.time_elapsed for log in loggers]).T, 5, axis=1)
 
 
 def plot_results(loggers: List[Union[Logger, AvgLogger]], add_to_title=''):
     # Create plots and set axes
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(6, 12))
     ax1.set_title(rf"test error{add_to_title}")
     ax2.set_title(rf"step size $\eta_t${add_to_title}")
-    for ax in [ax1, ax2]:
+    ax3.set_title(rf"time (s.){add_to_title}")
+    for ax in [ax1, ax2, ax3]:
         # log scale for error plots
         ax.set_xscale("log")
         ax.set_yscale("log")
@@ -68,10 +75,16 @@ def plot_results(loggers: List[Union[Logger, AvgLogger]], add_to_title=''):
         # step size
         if len(logger.eta_t) > 0:
             ax2.plot(x, logger.eta_t, label=logger.tag, marker='x')
+        # time elapsed
+        if len(logger.time_elapsed) > 0:
+            ax3.plot(x, logger.time_elapsed, label=logger.tag, marker='x')
+            if plot_std:
+                ax3.fill_between(x, logger.time_elapsed_p5, logger.time_elapsed_p95, alpha=0.33)
 
     # show the plot
-    for ax in [ax1, ax2]:
+    for ax in [ax1, ax2, ax3]:
         ax.legend()
+    fig.tight_layout()
     plt.savefig(f'../figures/{datetime.now().strftime("%d_%H%M%S")}.png', dpi=300)
     plt.show()
 
