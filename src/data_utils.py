@@ -1,8 +1,8 @@
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 
 def load_raw_data(dir_data: Path, print_descriptive_stats: bool):
@@ -121,7 +121,7 @@ def mnist_sparsity_analysis(a: np.array):
             break
     rho = max(ex_with_features_in_common) / n
 
-    print(f'n={n}, d={d}, omega = {omega}, delta={delta}, rho={rho}')
+    print(f"n={n}, d={d}, omega = {omega}, delta={delta}, rho={rho}")
 
     plt.imshow(feature_freq.reshape((28, 28)))
     plt.colorbar()
