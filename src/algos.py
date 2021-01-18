@@ -19,7 +19,7 @@ except FileExistsError:
 
 
 def train_gd(
-    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float
+        a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -56,13 +56,13 @@ def train_gd(
 
 
 def train_gd_proj(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    alpha: float,
-    radius: float,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        alpha: float,
+        radius: float,
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -160,13 +160,13 @@ def train_sgd(a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: i
 
 
 def train_sgd_proj(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    alpha: float,
-    radius: float,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        alpha: float,
+        radius: float,
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -215,7 +215,7 @@ def train_sgd_proj(
 
 
 def train_smd(
-    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
+        a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -260,7 +260,7 @@ def train_smd(
 
 
 def train_seg_pm(
-    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
+        a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -309,7 +309,7 @@ def train_seg_pm(
 
 
 def train_adagrad(
-    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
+        a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, radius: float
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -357,14 +357,14 @@ def train_adagrad(
 
 
 def train_ons(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    gamma: float,
-    alpha: float,
-    radius: float,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        gamma: float,
+        alpha: float,
+        radius: float,
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -465,7 +465,7 @@ def train_hogwild(a: np.array, b: np.array, a_test: np.array, b_test: np.array, 
         # increase the number of steps and decrease the learning rate
         K = int(K / beta)
         eta_t = beta * eta_t  # original learning rate from the paper
-        t += K * n_processes
+        t += steps_per_processor
 
     dt = (perf_counter_ns() - t0) / 1e9  # execution time in sec
     if use_logger:
@@ -480,27 +480,40 @@ def plot_hogwild():
     dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
+    # --- 2. plot hogwild for various values of K
     n_runs = 3
     n_workers = 8
     T = 1000000
     alpha = 0.33
     beta = 0.37
     theta = 0.2
-    results = []
-    results.append(AvgLogger([
-        train_sgd(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, return_avg=True, seed=s)[1]
-        for s in range(n_runs)
-    ]))
     results = [AvgLogger([
         train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta,
                       K=K, theta=theta, n_processes=n_workers, sequential=False, seed=s)[1]
         for s in range(n_runs)
-    ]) for K in [3]]
-    results.append(AvgLogger([
-        train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta,
-                      K=3, theta=theta, n_processes=n_workers, sequential=True, seed=s)[1]
-        for s in range(n_runs)
-    ]))
+    ]) for K in [3, 10, 50]]
+
+    # --- 1. plot comparison between SGD and hogwild, fixed K
+    # n_runs = 3
+    # n_workers = 8
+    # T = 1000000
+    # alpha = 0.33
+    # beta = 0.37
+    # theta = 0.2
+    # results = [AvgLogger([
+    #     train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta,
+    #                   K=K, theta=theta, n_processes=n_workers, sequential=False, seed=s)[1]
+    #     for s in range(n_runs)
+    # ]) for K in [3]]
+    # results.append(AvgLogger([
+    #     train_hogwild(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, beta=beta,
+    #                   K=3, theta=theta, n_processes=n_workers, sequential=True, seed=s)[1]
+    #     for s in range(n_runs)
+    # ]))
+    # results.append(AvgLogger([
+    #     train_sgd(a=x_train, b=y_train, a_test=x_test, b_test=y_test, T=T, alpha=alpha, return_avg=True, seed=s)[1]
+    #     for s in range(n_runs)
+    # ]))
 
     plot_results(results, add_to_title=rf" ($\alpha={alpha}, \beta={beta}, \theta={theta}$, n_runs={n_runs})")
 

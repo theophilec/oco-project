@@ -24,9 +24,9 @@ if __name__ == '__main__':
     K = 3
     results = {'algo': [], 'time': [], 'test_error': [], 'T': [], 'n_workers': [], 'K': []}
 
-    for algo in ['sgd']:
+    for algo in ['hogwild']:
         if algo == 'hogwild':
-            try_workers = [1, 4, 8]
+            try_workers = [8]
         else:
             try_workers = [8]
 
