@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter_ns
-from types import ModuleType
+import random
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -18,18 +18,22 @@ from utils import (
     hinge_loss_grad,
     hinge_loss_grad_partial,
     plot_results_,
-    softmax,
+    softmax, plot_results,
 )
 
-folder = "./joblib_memmap"
+root_dir = Path(__file__).resolve().parents[1]
+dir_data = root_dir.joinpath('data')
 try:
-    os.mkdir(folder)
+    os.mkdir(root_dir.joinpath('src/joblib_memmap'))  # to store shared parameters (hogwild)
+    os.mkdir(root_dir.joinpath('figures'))  # to save figures
 except FileExistsError:
     pass
 
 
+# ----- OCO algorithms from the lectures
+
 def train_gd(
-    a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float
+        a: np.array, b: np.array, a_test: np.array, b_test: np.array, T: int, alpha: float
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -66,13 +70,13 @@ def train_gd(
 
 
 def train_gd_proj(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    alpha: float,
-    radius: float,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        alpha: float,
+        radius: float,
 ):
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -111,15 +115,15 @@ def train_gd_proj(
 
 
 def train_sgd(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    alpha: float,
-    return_avg: bool,
-    seed: int,
-    use_logger=True,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        alpha: float,
+        return_avg=True,
+        seed=0,
+        use_logger=True,
 ):
     np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
@@ -179,14 +183,14 @@ def train_sgd(
 
 
 def train_sgd_proj(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    alpha: float,
-    radius: float,
-    seed: int,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        alpha: float,
+        radius: float,
+        seed=0,
 ):
     np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
@@ -236,13 +240,13 @@ def train_sgd_proj(
 
 
 def train_smd(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    radius: float,
-    seed: int,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        radius: float,
+        seed=0,
 ):
     np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
@@ -288,13 +292,13 @@ def train_smd(
 
 
 def train_seg_pm(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    radius: float,
-    seed: int,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        radius: float,
+        seed=0,
 ):
     np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
@@ -344,13 +348,13 @@ def train_seg_pm(
 
 
 def train_sreg_pm(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    radius: float,
-    seed: int,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        radius: float,
+        seed=0,
 ):
     np.random.seed(seed)
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -389,7 +393,7 @@ def train_sreg_pm(
         else:
             if abs(w[direction + d]) > 1e-9:
                 w[direction + d] = (
-                    np.exp(eta_t * grad / w[direction + d]) * w[direction + d]
+                        np.exp(eta_t * grad / w[direction + d]) * w[direction + d]
                 )
 
         w = w / np.sum(w)
@@ -403,13 +407,13 @@ def train_sreg_pm(
 
 
 def train_adagrad(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    radius: float,
-    seed: int,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        radius: float,
+        seed=0,
 ):
     np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
@@ -458,15 +462,15 @@ def train_adagrad(
 
 
 def train_ons(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    gamma: float,
-    alpha: float,
-    radius: float,
-    seed: int,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        gamma: float,
+        alpha: float,
+        radius: float,
+        seed=0,
 ):
     np.random.seed(seed)
     # add a column of ones to the input data, to avoid having to define an explicit bias in our weights
@@ -518,6 +522,8 @@ def train_ons(
     return x, logger
 
 
+# ----- Hogwild algorithm
+
 def train_epoch_hogwild(x, a, b, I_p, eta, alpha):
     for i in I_p:
         a_i, b_i = a[i][np.newaxis, :], np.array([b[i]])
@@ -528,19 +534,19 @@ def train_epoch_hogwild(x, a, b, I_p, eta, alpha):
 
 
 def train_hogwild(
-    a: np.array,
-    b: np.array,
-    a_test: np.array,
-    b_test: np.array,
-    T: int,
-    alpha: float,
-    K: int,
-    beta: float,
-    theta: float,
-    n_processes: int,
-    sequential: bool,
-    seed: int,
-    use_logger=True,
+        a: np.array,
+        b: np.array,
+        a_test: np.array,
+        b_test: np.array,
+        T: int,
+        alpha: float,
+        K: int,
+        beta: float,
+        theta: float,
+        n_processes: int,
+        sequential: bool,
+        seed: int,
+        use_logger=True,
 ):
     np.random.seed(seed)
     a = np.concatenate([a, np.ones((len(a), 1))], axis=1)
@@ -610,7 +616,6 @@ def train_hogwild(
 
 
 def plot_hogwild():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     # --- 2. plot hogwild for various values of K
@@ -650,8 +655,10 @@ def plot_hogwild():
 
     plot_results(results, add_to_title=rf" ($\alpha={alpha}, \beta={beta}, \theta={theta}$, n_runs={n_runs})")
 
+
+# ----- Plotting the results (to reproduce figures from the report)
+
 def gd_gd_proj_z():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -686,7 +693,6 @@ def gd_gd_proj_z():
 
 
 def gd_sgd():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -738,7 +744,6 @@ def gd_sgd():
 
 
 def sgd_smd():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -780,7 +785,6 @@ def sgd_smd():
 
 
 def sgd_seg():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -813,7 +817,6 @@ def sgd_seg():
 
 
 def sgd_ons():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -847,7 +850,6 @@ def sgd_ons():
 
 
 def train_all():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -919,7 +921,6 @@ def train_all():
 
 
 def sgd_sgdproj_var():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -927,7 +928,6 @@ def sgd_sgdproj_var():
     n_runs = 10
     T = 10000
     alpha = 0.1
-    radius = 100
     results.append(
         AvgLogger(
             [
@@ -967,7 +967,6 @@ def sgd_sgdproj_var():
 
 
 def sgdproj_smd_var():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -1014,7 +1013,6 @@ def sgdproj_smd_var():
 
 
 def sgdproj_segpm_var():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -1061,7 +1059,6 @@ def sgdproj_segpm_var():
 
 
 def sgd_adagrad_var():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -1108,7 +1105,6 @@ def sgd_adagrad_var():
 
 
 def seg_sreg_var():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -1155,8 +1151,7 @@ def seg_sreg_var():
     plot_results_(results, add_to_title=rf" - $\alpha={alpha}$, n_runs={n_runs}")
 
 
-def train_all():
-    dir_data = Path(__file__).resolve().parents[1].joinpath("data/")
+def sgd_ons_var():
     x_train, y_train, x_test, y_test = load_processed_data(dir_data)
 
     results = []
@@ -1206,10 +1201,4 @@ def train_all():
 
 
 if __name__ == "__main__":
-    folder = "./joblib_memmap"
-    try:
-        os.mkdir(folder)
-    except FileExistsError:
-        pass
-
     train_all()
