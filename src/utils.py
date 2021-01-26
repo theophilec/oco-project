@@ -1,9 +1,12 @@
 from datetime import datetime
+from pathlib import Path
 from typing import List, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import ticker
+
+root_dir = Path(__file__).resolve().parents[1]
 
 
 def softmax(x):
@@ -21,13 +24,13 @@ class Logger:
         self.time_elapsed = []
 
     def log(
-        self,
-        iteration: int,
-        loss: float,
-        train_err: float,
-        test_err: float,
-        eta_t=-1.0,
-        time_elapsed=-1.0,
+            self,
+            iteration: int,
+            loss: float,
+            train_err: float,
+            test_err: float,
+            eta_t=-1.0,
+            time_elapsed=-1.0,
     ):
         self.iterations.append(iteration)
         self.loss.append(loss)
@@ -109,7 +112,7 @@ def plot_results(loggers: List[Union[Logger, AvgLogger]], add_to_title=""):
     for ax in [ax1]:  # , ax2, ax3]:
         ax.legend()
     fig.tight_layout()
-    plt.savefig(f'../figures/{datetime.now().strftime("%d_%H%M%S")}.png', dpi=300)
+    plt.savefig(root_dir.joinpath(f'figures/{datetime.now().strftime("%d_%H%M%S")}.png'), dpi=300)
     plt.show()
 
 
@@ -148,7 +151,7 @@ def plot_results_(loggers: List[Union[Logger, AvgLogger]], add_to_title=""):
     for ax in [ax1]:  # , ax2, ax3]:
         ax.legend()
     fig.tight_layout()
-    plt.savefig(f'../figures/{datetime.now().strftime("%d_%H%M%S")}.png', dpi=300)
+    plt.savefig(root_dir.joinpath(f'figures/{datetime.now().strftime("%d_%H%M%S")}.png'), dpi=300)
     plt.show()
 
 
@@ -206,7 +209,7 @@ def hinge_loss_grad(a: np.array, b: np.array, x: np.array, alpha: float):
 
 
 def hinge_loss_grad_partial(
-    a: np.array, b: np.array, x: np.array, alpha: float, direction: int
+        a: np.array, b: np.array, x: np.array, alpha: float, direction: int
 ):
     """
     Args:
